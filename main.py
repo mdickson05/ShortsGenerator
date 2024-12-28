@@ -1,9 +1,13 @@
 from openai import OpenAI
+from enum import Enum
 from urllib.request import urlopen 
 from urllib.error import URLError, HTTPError
 import os, json, csv
 
 OpenAI.api_key = os.environ["OPENAI_API_KEY"]
+
+class ScriptType(Enum): 
+    ASK_REDDIT = "1"
 
 def parse_all_results():
     # Load and process URL from CLI
@@ -27,8 +31,12 @@ def parse_all_results():
         print(f"Unexpected error while accessing URL: {str(e)}")
         return
     
-    # Load the JSON
-    response_json = json.loads(response.read())
+    try:
+        # Load the JSON
+        response_json = json.loads(response.read())
+    except json.decoder.JSONDecodeError as e:
+        print(f"Error parsing JSON. Check URL and try again: {str(e)}")
+        return
 
     # Access the data within each child
     children_json = response_json["data"]["children"]
@@ -49,6 +57,8 @@ def parse_all_results():
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(children_list)
+    
+    print("Parsing successful! Filtering titles...")
 
 def chatgpt_title_filtering():
     with open("parse_output.csv", mode="r") as csvfile:
@@ -107,14 +117,17 @@ def chatgpt_title_filtering():
 
     if(len(title_list) == 7): 
         print("Generation successful, printing output...")
-    # Write to CSV
-    with open("chatgpt_output.csv", "w", newline="") as csvfile:
-        fieldnames = ["title", "url"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(title_list)
+        # Write to CSV
+        with open("chatgpt_output.csv", "w", newline="") as csvfile:
+            fieldnames = ["title", "url"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(title_list)
+    else:
+        print("Did not generate seven titles, trying again...")
+        chatgpt_title_filtering()
 
-def chatgpt_script_generator():
+def ask_reddit_script():
     with open("script.txt", "w") as script:
         script.write("")
     with open("chatgpt_output.csv", "r") as csvfile:
@@ -174,7 +187,19 @@ def chatgpt_script_generator():
 
 parse_all_results()
 chatgpt_title_filtering()
-chatgpt_script_generator()
+
+menu = f"""
+Select from the following options: 
+1. Generate Ask Reddit Script
+"""
+print(menu)
+selected_script = input("Enter your response: ").strip()
+if selected_script == ScriptType.ASK_REDDIT.value:
+    ask_reddit_script()
+else:
+    print("Invalid option. Closing app...")
+
+
 
 
 
