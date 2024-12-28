@@ -1,9 +1,9 @@
-import os
 from openai import OpenAI
 from urllib.request import urlopen 
 from urllib.error import URLError, HTTPError
-import json
-import csv
+import os, json, csv
+
+OpenAI.api_key = os.environ["OPENAI_API_KEY"]
 
 def parse_all_results():
     # Load and process URL from CLI
@@ -44,20 +44,18 @@ def parse_all_results():
             children_list.append(child_dict)
 
     # Write to CSV
-    with open("output.csv", "w", newline="") as csvfile:
+    with open("parse_output.csv", "w", newline="") as csvfile:
         fieldnames = ["title", "url"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(children_list)
 
-def chatgpt_analysis():
-    with open("output.csv", mode="r") as csvfile:
+def chatgpt_title_filtering():
+    with open("parse_output.csv", mode="r") as csvfile:
         input = csv.DictReader(csvfile)
         titles = list()
         for lines in input:
             titles.append(lines["title"])
-
-    OpenAI.api_key = os.environ["OPENAI_API_KEY"]
 
     prompt = f"""
         You are a renowned social media algorithm expert with a deep understanding of how content performs on various platforms, including Reddit, TikTok, Instagram, and YouTube. Your task is to evaluate a list of Reddit post titles and identify the top 7 topics most likely to generate high engagement on social media platforms, while considering their potential for monetization.
@@ -96,7 +94,7 @@ def chatgpt_analysis():
     output = completion.choices[0].message.content
     result_titles = output.split("\n")
 
-    with open("output.csv", mode="r") as csvfile:
+    with open("parse_output.csv", mode="r") as csvfile:
         title_list = list()
         input = csv.DictReader(csvfile)
         for lines in input:
@@ -116,10 +114,67 @@ def chatgpt_analysis():
         writer.writeheader()
         writer.writerows(title_list)
 
+def chatgpt_script_generator():
+    with open("script.txt", "w") as script:
+        script.write("")
+    with open("chatgpt_output.csv", "r") as csvfile:
+        input = csv.DictReader(csvfile)
+        for lines in input:
+            title = lines["title"]
+            url = lines["url"]
+            json_url = url[:-1] + ".json?limit=20"
+            print(f"Url: {json_url}")
+            response = urlopen(json_url) 
+            # Load the JSON
+            response_json = json.loads(response.read())
+            # Access the data within each child
+            for listing in response_json:
+                children_json = listing["data"]["children"]
+                # Convert json response to list
+                children_list = list()
+                for child in children_json:
+                    if(child["kind"] != "t3"):
+                        body = child["data"].get("body")  # Safely get "body" if it exists
+                        if body:  # Ensure "body" is not None
+                            children_list.append(body.strip())
+            prompt = f"""
+
+                You are a renowned social media algorithm expert, recognized for your mastery in creating viral short-form video content. Your task is to evaluate a list of 20 potential responses to a given question and craft a single, engaging 25-40 second script tailored for platforms such as TikTok, Instagram Reels, and YouTube Shorts. Make sure to present the information as a series of different comments, or as a larger, single comment. Do not take any creative liberties; leave the comment/s as is. Remember, each comment comes from a separate individual
+
+                ### Instructions:  
+                1. Analyze the 20 responses to find the most impactful response/s based on emotional resonance, relatability, novelty, humor, and shareability.  
+                2. Collate the chosen response/s into a 25-40 second plain text script (~100 words), putting each response on a new line. Do not include any discussion, explanation, or additional formatting.
+                
+                ### Information:
+                Here is the question asked:
+                {title}
+
+                Here is the list of 20 potential responses:  
+                {children_list}
+                
+                ### Response Format:              
+                $final_script
+            """
+
+            client = OpenAI()
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "user", 
+                    "content": prompt
+                    }
+                ]
+            )
+
+            output = completion.choices[0].message.content
+            with open("script.txt", "a") as script:
+                script.write(title + '\n')
+                script.write(output + '\n')
+                script.write("***\n")
 
 parse_all_results()
-chatgpt_analysis()
-
+chatgpt_title_filtering()
+chatgpt_script_generator()
 
 
 

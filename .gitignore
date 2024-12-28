@@ -2,3 +2,7 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
+
+script.txt
+comment_output.txt
+*.csv
