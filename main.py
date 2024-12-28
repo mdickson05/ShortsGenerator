@@ -12,7 +12,8 @@ OpenAI.api_key = os.environ["OPENAI_API_KEY"]
 
 class ScriptType(Enum):
     """Class for menu options"""
-    ASK_REDDIT = "1"
+    ASK_REDDIT = 1
+    POST = 2
 
 
 def parse_all_results():
@@ -63,7 +64,7 @@ def parse_all_results():
     print("Parsing successful! Filtering titles...")
 
 
-def chatgpt_title_filtering():
+def chatgpt_title_filtering(num_topics):
     """Filter titles with ChatGPT API based on engagement"""
     # Read the parsed output, extract title
     with open("parse_output.csv", mode="r", encoding="utf-8") as csvfile:
@@ -74,7 +75,7 @@ def chatgpt_title_filtering():
 
     # Prompt for filtering
     prompt = f"""
-        You are a renowned social media algorithm expert with a deep understanding of how content performs on various platforms, including Reddit, TikTok, Instagram, and YouTube. Your task is to evaluate a list of Reddit post titles and identify the top 7 topics most likely to generate high engagement on social media platforms, while considering their potential for monetization.
+        You are a renowned social media algorithm expert with a deep understanding of how content performs on various platforms, including Reddit, TikTok, Instagram, and YouTube. Your task is to evaluate a list of Reddit post titles and identify the top {num_topics} topic/s most likely to generate high engagement on social media platforms, while considering their potential for monetization.
 
         Please rank the titles based on the following criteria:
         1. Likelihood of high engagement (e.g., upvotes, comments, and shares) on social media platforms.
@@ -83,13 +84,7 @@ def chatgpt_title_filtering():
 
         Here is the format you will use to provide your ranked analysis:
 
-        $title_1
-        $title_2
-        $title_3
-        $title_4
-        $title_5
-        $title_6
-        $title_7
+        """ + "\n".join([f"${{title_{i+1}}}" for i in range(num_topics)]) + f"""
 
         You must only include the titles in your response. Do not include any discussion, explanation, or additional formatting.
 
@@ -123,8 +118,8 @@ def chatgpt_title_filtering():
                     title_list.append(title_dict)
 
     # If the title_list has the correct amount of titles...
-    if len(title_list) == 7:
-        print("Generation successful, printing output...")
+    if len(title_list) == num_topics:
+        print("Filtering successful, printing output...")
         # Write to CSV
         with open("chatgpt_output.csv", "w", newline="", encoding="UTF-8") as csvfile:
             fieldnames = ["title", "url"]
@@ -133,8 +128,8 @@ def chatgpt_title_filtering():
             writer.writerows(title_list)
     # Else run chatgpt filtering again
     else:
-        print("Did not generate seven titles, trying again...")
-        chatgpt_title_filtering()
+        print(f"Did not generate {num_topics} titles, trying again...")
+        chatgpt_title_filtering(num_topics)
 
 
 def ask_reddit_script():
@@ -205,18 +200,61 @@ def ask_reddit_script():
                 script.write("\n")
 
 
+def get_post_content():
+    """Generates a script for a Reddit post"""
+    # Clear the existing script
+    with open("script.txt", "w", encoding="UTF-8") as script:
+        script.write("")
+    # Open ChatGPT title output
+    with open("chatgpt_output.csv", "r", encoding="UTF-8") as csvfile:
+        selected_titles = csv.DictReader(csvfile)
+        # Convert processed link to filter for top 20 comments
+        for lines in selected_titles:
+            title = lines["title"]
+            url = lines["url"]
+            json_url = url[:-1] + ".json?limit=20"
+            print(f"Url: {json_url}")
+            response = urlopen(json_url)
+            # Load the JSON
+            response_json = json.loads(response.read())
+            # Access the data within each child
+            for listing in response_json:
+                children_json = listing["data"]["children"]
+                # Convert json response to list
+                for child in children_json:
+                    # Filter out the comments
+                    if child["kind"] == "t3":
+                        # Safely get "selftext" if it exists
+                        body = child["data"].get("selftext")
+                        if body:  # Ensure "body" is not None
+                            output = body.strip()
+                            # Write post to file
+                            with open("script.txt", "a", encoding="UTF-8") as script:
+                                script.write(title + '\n')
+                                script.write(output + '\n')
+                                script.write("\n")
+
+
 # Parse and filter title list
 parse_all_results()
-chatgpt_title_filtering()
+num_titles = int(input("Enter the number of titles you want to generate: "))
+chatgpt_title_filtering(num_titles)
 
 # Print menu for use to select option
 MENU = """
 Select from the following options: 
 1. Generate Ask Reddit Script
+2. Get Post Content
 """
-print(MENU)
-selected_script = input("Enter your response: ").strip()
-if selected_script == ScriptType.ASK_REDDIT.value:
-    ask_reddit_script()
-else:
-    print("Invalid option. Closing app...")
+IS_CORRECT = False
+while IS_CORRECT is False:
+    print(MENU)
+    selected_script = int(input("Enter your response: "))
+    if selected_script == ScriptType.ASK_REDDIT.value:
+        ask_reddit_script()
+        IS_CORRECT = True
+    elif selected_script == ScriptType.POST.value:
+        get_post_content()
+        IS_CORRECT = True
+    else:
+        print("Invalid option. Try again...")
